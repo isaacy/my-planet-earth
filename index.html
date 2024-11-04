@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>2D Adventure Game</title>
+    <style>
+        .game-container {
+            width: 800px;
+            height: 200px;
+            position: relative;
+            overflow: hidden;
+            background: linear-gradient(
+                to bottom,
+                #87CEEB 0%,
+                #87CEEB 60%,
+                #90EE90 60%,
+                #90EE90 80%,
+                #8B4513 80%,
+                #8B4513 100%
+            );
+            border: 2px solid #333;
+        }
+
+        .player {
+            width: 30px;
+            height: 50px;
+            position: absolute;
+            bottom: 40px;
+            left: 50px;
+            background-color: #FF6B6B;
+            border-radius: 5px;
+            z-index: 2;
+            transition: bottom 0.1s;
+        }
+
+        .entity {
+            width: 20px;
+            height: 20px;
+            position: absolute;
+            bottom: 40px;
+            border-radius: 50%;
+        }
+
+        .plant {
+            background-color: #228B22;
+        }
+
+        .planted {
+            background-color: #228B22;
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            bottom: 40px;
+        }
+
+        .animal {
+            background-color: #8B4513;
+            animation: bounce 1s infinite;
+        }
+
+        .wild-animal {
+            background-color: #FF0000;
+            animation: bounce 1s infinite;
+        }
+
+        .hearts {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 3;
+            font-size: 24px;
+        }
+
+        .seeds {
+            position: absolute;
+            top: 40px;
+            left: 10px;
+            z-index: 3;
+            font-size: 18px;
+            color: #228B22;
+        }
+
+        .game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            z-index: 4;
+            display: none;
+        }
+
+        .game-over-text {
+            font-size: 48px;
+            color: red;
+            margin-bottom: 20px;
+        }
+
+        .restart-button {
+            padding: 10px 20px;
+            font-size: 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .restart-button:hover {
+            background-color: #45a049;
+        }
+
+        @keyframes bounce {
+            0%, 100% { bottom: 40px; }
+            50% { bottom: 45px; }
+        }
+
+        .controls {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <div class="hearts">❤️❤️❤️</div>
+        <div class="seeds">Seeds: 0</div>
+        <div class="player"></div>
+        <div class="game-over">
+            <div class="game-over-text">Game Over!</div>
+            <button class="restart-button">Restart Game</button>
+        </div>
+    </div>
+
+    <div class="controls">
+        <p>Controls:</p>
+        <ul>
+            <li>Left/Right Arrow: Move</li>
+            <li>Space: Jump</li>
+            <li>Down Arrow: Plant seed (when you have seeds)</li>
+        </ul>
+        <p>Rules:</p>
+        <ul>
+            <li>Touch plants to collect seeds (max 15)</li>
+            <li>Brown animals are friendly</li>
+            <li>Red animals are wild and will bite!</li>
+        </ul>
+    </div>
+
+    <script>
+        const player = document.querySelector('.player');
+        const gameContainer = document.querySelector('.game-container');
+        const heartsDisplay = document.querySelector('.hearts');
+        const seedsDisplay = document.querySelector('.seeds');
+        const gameOverDisplay = document.querySelector('.game-over');
+        const restartButton = document.querySelector('.restart-button');
+        
+        let playerPosition = 50;
+        let playerBottom = 40;
+        let hearts = 3;
+        let seeds = 0;
+        let isGameOver = false;
+        let isJumping = false;
+        let plantedLocations = new Set();
+        let entityIntervals = [];
+        
+        // Restart game function
+        function restartGame() {
+            // Clear all entities
+            const entities = document.querySelectorAll('.entity');
+            entities.forEach(entity => entity.remove());
+            
+            // Clear all planted plants
+            const plants = document.querySelectorAll('.planted');
+            plants.forEach(plant => plant.remove());
+            
+            // Reset all variables
+            playerPosition = 50;
+            playerBottom = 40;
+            hearts = 3;
+            seeds = 0;
+            isGameOver = false;
+            isJumping = false;
+            plantedLocations.clear();
+            
+            // Reset displays
+            player.style.left = playerPosition + 'px';
+            player.style.bottom = playerBottom + 'px';
+            heartsDisplay.textContent = '❤️'.repeat(hearts);
+            updateSeedsDisplay();
+            gameOverDisplay.style.display = 'none';
+            
+            // Clear all intervals and start fresh spawn interval
+            entityIntervals.forEach(interval => clearInterval(interval));
+            entityIntervals = [];
+            startEntitySpawning();
+        }
+        
+        restartButton.addEventListener('click', restartGame);
+
+        // Player movement and actions
+        document.addEventListener('keydown', (e) => {
+            if (isGameOver) return;
+            
+            switch(e.key) {
+                case 'ArrowLeft':
+                    if (playerPosition > 0) {
+                        playerPosition -= 10;
+                    }
+                    break;
+                case 'ArrowRight':
+                    if (playerPosition < gameContainer.offsetWidth - 30) {
+                        playerPosition += 10;
+                    }
+                    break;
+                case ' ':
+                    if (!isJumping) {
+                        jump();
+                    }
+                    break;
+                case 'ArrowDown':
+                    if (seeds > 0 && !isJumping) {
+                        plantSeed();
+                    }
+                    break;
+            }
+            
+            player.style.left = playerPosition + 'px';
+            checkCollisions();
+        });
+
+        function jump() {
+            isJumping = true;
+            let jumpHeight = 100;
+            playerBottom = 140; // Jump height
+            player.style.bottom = playerBottom + 'px';
+
+            setTimeout(() => {
+                playerBottom = 40; // Original height
+                player.style.bottom = playerBottom + 'px';
+                setTimeout(() => {
+                    isJumping = false;
+                }, 100);
+            }, 500);
+        }
+
+        function plantSeed() {
+            if (seeds > 0 && !plantedLocations.has(playerPosition)) {
+                const plant = document.createElement('div');
+                plant.className = 'planted';
+                plant.style.left = playerPosition + 'px';
+                gameContainer.appendChild(plant);
+                plantedLocations.add(playerPosition);
+                seeds--;
+                updateSeedsDisplay();
+            }
+        }
+
+        // Spawn entities (plants and animals)
+        function spawnEntity() {
+            if (isGameOver) return;
+            
+            const entity = document.createElement('div');
+            entity.className = 'entity';
+            
+            // Randomly decide if it's a plant, friendly animal, or wild animal
+            const random = Math.random();
+            if (random < 0.4) { // 40% chance for plant
+                entity.classList.add('plant');
+            } else if (random < 0.7) { // 30% chance for friendly animal
+                entity.classList.add('animal');
+            } else { // 30% chance for wild animal
+                entity.classList.add('wild-animal');
+            }
+            
+            // Position the entity
+            entity.style.left = gameContainer.offsetWidth + 'px';
+            gameContainer.appendChild(entity);
+            
+            // Move entity to the left
+            const moveInterval = setInterval(() => {
+                const currentLeft = parseInt(entity.style.left);
+                if (currentLeft < -20) {
+                    entity.remove();
+                    clearInterval(moveInterval);
+                } else {
+                    entity.style.left = (currentLeft - 2) + 'px';
+                }
+            }, 20);
+
+            entityIntervals.push(moveInterval);
+
+            setTimeout(() => {
+                entity.remove();
+                clearInterval(moveInterval);
+            }, 10000);
+        }
+
+        function startEntitySpawning() {
+            const spawnInterval = setInterval(spawnEntity, 2000);
+            entityIntervals.push(spawnInterval);
+        }
+
+        // Check for collisions
+        function checkCollisions() {
+            const entities = document.querySelectorAll('.entity');
+            const playerRect = player.getBoundingClientRect();
+            
+            entities.forEach(entity => {
+                const entityRect = entity.getBoundingClientRect();
+                
+                if (isColliding(playerRect, entityRect)) {
+                    if (entity.classList.contains('plant')) {
+                        // Collect seed if not at max
+                        if (seeds < 15) {
+                            seeds++;
+                            updateSeedsDisplay();
+                        }
+                        entity.remove();
+                    } else if (entity.classList.contains('wild-animal')) {
+                        // Wild animal always bites
+                        hearts--;
+                        heartsDisplay.textContent = '❤️'.repeat(hearts);
+                        entity.remove();
+                        
+                        if (hearts <= 0) {
+                            gameOver();
+                        }
+                    }
+                    // Friendly animals (brown) do nothing
+                }
+            });
+        }
+
+        function updateSeedsDisplay() {
+            seedsDisplay.textContent = `Seeds: ${seeds}`;
+        }
+
+        // Collision detection helper
+        function isColliding(rect1, rect2) {
+            return !(rect1.right < rect2.left || 
+                    rect1.left > rect2.right || 
+                    rect1.bottom < rect2.top || 
+                    rect1.top > rect2.bottom);
+        }
+
+        // Game over function
+        function gameOver() {
+            isGameOver = true;
+            gameOverDisplay.style.display = 'block';
+        }
+
+        // Start initial entity spawning
+        startEntitySpawning();
+    </script>
+</body>
+</html>
